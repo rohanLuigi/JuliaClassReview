@@ -6,7 +6,10 @@ using DataFrames
 include("solver.jl")
 include("types.jl")
 include("functions.jl")
+include("MCMC.jl")
 
-export ModelTerm
+export initMME
+export setAsRandom
+export sampleMCMC
 
 end
