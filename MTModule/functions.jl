@@ -176,6 +176,8 @@ function getMME(mme::MME, df::DataFrame)
     ySparse = sparse(ii,jj,vv)
     nObs = size(df,1)
     Ri = mkRi(mme,df)
+    mme.X = X
+    mme.ySparse = ySparse 
     mme.mmeLhs = X'Ri*X
     mme.mmeRhs = X'Ri*ySparse
     if mme.ped != 0

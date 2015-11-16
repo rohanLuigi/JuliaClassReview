@@ -56,3 +56,12 @@ function Gibbs(A,x,b,nIter;outFreq=100)
     end
     return xMean
 end
+
+function Gibbs(A,x,b)
+    n = size(x,1)
+    for i=1:n
+        cVarInv = 1.0/A[i,i]
+        cMean   = cVarInv*(b[i] - A[:,i]'x)[1,1] + x[i]
+        x[i]    = randn()*sqrt(cVarInv) + cMean
+    end
+end

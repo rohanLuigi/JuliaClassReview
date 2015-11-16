@@ -40,7 +40,7 @@ function initMME(modelEquation::AbstractString) #Difference: made modelTerms int
     for (i,trm) = enumerate(modelTerms)
         dict[trm.trmStr] = modelTerms[i]
     end    
-    return MME(modelEquation,modelTerms,dict,lhs,[],[],0,0,0,Array(Float64,1,1),0,1)
+    return MME(modelEquation,modelTerms,dict,lhs,[],[],0,0,0,0,0,Array(Float64,1,1),0,1,0)
 end 
 
 function getData(trm,df::DataFrame,mme::MME)
@@ -151,12 +151,14 @@ function getMME(mme::MME, df::DataFrame)
     jj = fill(1,nObs)
     vv = y
     nRowsX = size(X,1)
-    if nRowsX > nObs  ###??????
+    if nRowsX > nObs  ###?????? nRowsX=nObs
         ii = [ii,nRowsX]
         jj = [jj,1]
         vv = [vv,0.0]
     end
     ySparse = sparse(ii,jj,vv)
+    mme.X = X
+    mme.ySparse = ySparse 
     mme.mmeLhs = X'X
     mme.mmeRhs = X'ySparse
     if mme.ped != 0

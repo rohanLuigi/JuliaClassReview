@@ -17,10 +17,13 @@ type MME
     lhs::Symbol
     covVec::Array{Symbol,1}
     pedTrmVec::Array{AbstractString,1}
+    X
+    ySparse
     mmeLhs
     mmeRhs
     ped
     Gi::Array{Float64,2}
     Ai
     mmePos::Int64
+    M #marker genotypes
 end
