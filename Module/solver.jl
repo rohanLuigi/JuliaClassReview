@@ -40,6 +40,23 @@ function GaussSeidel(A,x,b;tol=0.000001,output=10)
     return x
 end
 
+function Gibbs(A,x,b,varRes::Float64,nIter;outFreq=100)
+    n = size(x,1)
+    xMean = zeros(n)
+    for iter = 1:nIter
+        if iter%outFreq==0
+            println("at sample: ",iter)
+        end
+        for i=1:n
+            cVarInv = 1.0/A[i,i]
+            cMean   = cVarInv*(b[i] - A[:,i]'x)[1,1] + x[i]
+            x[i]    = randn()*sqrt(cVarInv*varRes) + cMean
+        end
+        xMean += (x - xMean)/iter
+    end
+    return xMean
+end
+
 function Gibbs(A,x,b,nIter;outFreq=100)
     n = size(x,1)
     xMean = zeros(n)
@@ -57,11 +74,11 @@ function Gibbs(A,x,b,nIter;outFreq=100)
     return xMean
 end
 
-function Gibbs(A,x,b)
+function Gibbs(A,x,b,varRes::Float64)
     n = size(x,1)
     for i=1:n
         cVarInv = 1.0/A[i,i]
         cMean   = cVarInv*(b[i] - A[:,i]'x)[1,1] + x[i]
-        x[i]    = randn()*sqrt(cVarInv) + cMean
+        x[i]    = randn()*sqrt(cVarInv*varRes) + cMean
     end
 end

@@ -17,7 +17,7 @@ function getNames(mme)
         end
     end
     return names
-end  
+end
 
 function getTerm(trmStr) #only declaration of trm is changed
     trm = ModelTerm(trmStr,0,[],[],[],0,0,spzeros(0,0),[])
@@ -27,37 +27,37 @@ function getTerm(trmStr) #only declaration of trm is changed
     return trm
 end
 
-function initMME(modelEquation::AbstractString) #Difference: made modelTerms into a dictionary
+function initMME(modelEquation::AbstractString,R::Float64) #Difference: made modelTerms into a dictionary
     if modelEquation==""
         error("modelEquation is empty\n")
     end
     lhsRhs = split(modelEquation,"=")
     lhs = symbol(strip(lhsRhs[1]))
     rhs = strip(lhsRhs[2])
-    rhsVec = split(rhs,"+")    
+    rhsVec = split(rhs,"+")
     dict = Dict{AbstractString,ModelTerm}()
     modelTerms = [getTerm(strip(trmStr)) for trmStr in rhsVec]
     for (i,trm) = enumerate(modelTerms)
         dict[trm.trmStr] = modelTerms[i]
-    end    
-    return MME(modelEquation,modelTerms,dict,lhs,[],[],0,0,0,0,0,Array(Float64,1,1),0,1,0)
-end 
+    end
+    return MME(modelEquation,modelTerms,dict,lhs,[],[],0,0,0,0,0,Array(Float64,1,1),R,0,1,0)
+end
 
 function getData(trm,df::DataFrame,mme::MME)
     nObs = size(df,1)
     trm.str = Array(AbstractString,nObs)
     trm.val = Array(Float64,nObs)
-    
+
     if trm.factors[1] == :intercept ##modified from Melanie's HW ##new
-        str = fill(string(trm.factors[1]),nObs) 
+        str = fill(string(trm.factors[1]),nObs)
         val = fill(1.0,nObs)
         trm.str = str
         trm.val = val
         return
     end
-    
-    myDf = df[trm.factors]   
-        
+
+    myDf = df[trm.factors]
+
     if trm.factors[1] in mme.covVec
         str = fill(string(trm.factors[1]),nObs)
         val = df[trm.factors[1]]
@@ -79,26 +79,11 @@ function getData(trm,df::DataFrame,mme::MME)
 end
 
 function covList(mme::MME, covStr::AbstractString)
-    covVec = split(covStr," ",keep=false) 
+    covVec = split(covStr," ",keep=false)
     mme.covVec = [symbol(i) for i in covVec]
     nothing
 end
 
-function getSolJ(mme::MME, df::DataFrame)
-    if size(mme.mmeRhs)==() 
-        getMME(mme,df)
-    end
-    p = size(mme.mmeRhs,1)
-    return [getNames(mme) Jacobi(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,0.3,tol=0.000001)]
-end
-
-function getSolG(mme::MME, df::DataFrame)
-    if size(mme.mmeRhs)==() 
-        getMME(mme,df)
-    end
-    p = size(mme.mmeRhs,1)
-    return [getNames(mme) GaussSeidel(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,tol=0.000001)]
-end
 getFactor1(str) = [strip(i) for i in split(str,"x")][1] #using in may be better. maybe age*animal
 
 function getX(trm::ModelTerm,mme::MME)
@@ -113,12 +98,12 @@ function getX(trm::ModelTerm,mme::MME)
         trm.nLevels     = length(dict)
         xj    =  round(Int64,[dict[i] for i in trm.str])
     end
-    xi    = 1:nObs  #row index 
+    xi    = 1:nObs  #row index
     xv    = trm.val #value
     if mme.ped!=0 #Because some animals in pedigree may not in the data
         pedSize = length(mme.ped.idMap)
         if trm.trmStr in mme.pedTrmVec
-            # This is to ensure the X matrix for 
+            # This is to ensure the X matrix for
             # additive effect has the correct number of columns
             ii = 1         # adding a zero to
             jj = pedSize   # the last column in row 1
@@ -127,7 +112,7 @@ function getX(trm::ModelTerm,mme::MME)
             xj = [xj;jj]
             xv = [xv;vv]
         end
-    end  
+    end
     trm.X = sparse(xi,xj,xv)
     trm.startPos = mme.mmePos
     mme.mmePos  += trm.nLevels
@@ -158,7 +143,7 @@ function getMME(mme::MME, df::DataFrame)
     end
     ySparse = sparse(ii,jj,vv)
     mme.X = X
-    mme.ySparse = ySparse 
+    mme.ySparse = ySparse
     mme.mmeLhs = X'X
     mme.mmeRhs = X'ySparse
     if mme.ped != 0
@@ -172,7 +157,7 @@ end
 function setAsRandom(mme::MME,randomStr::AbstractString,ped::PedModule.Pedigree, G::Array{Float64,2})
     mme.pedTrmVec = split(randomStr," ",keep=false)
     mme.ped = ped
-    mme.Gi = inv(G)
+    mme.Gi = inv(G)*mme.R
     nothing
 end
 
@@ -186,9 +171,33 @@ function addA(mme::MME)
         for (j,trmj) = enumerate(pedTrmVec)
             pedTrmj  = mme.modelTermDict[trmj]
             startPosj  = pedTrmj.startPos
-            endPosj    = startPosj + pedTrmj.nLevels - 1       
-            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] = 
-            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] + mme.Ai*mme.Gi[i,j] 
+            endPosj    = startPosj + pedTrmj.nLevels - 1
+            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] =
+            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] + mme.Ai*mme.Gi[i,j]
         end
     end
+end
+
+function getSolJ(mme::MME, df::DataFrame)
+    if size(mme.mmeRhs)==()
+        getMME(mme,df)
+    end
+    p = size(mme.mmeRhs,1)
+    return [getNames(mme) Jacobi(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,0.3,tol=0.000001)]
+end
+
+function getSolG(mme::MME, df::DataFrame;outFreq=10)
+    if size(mme.mmeRhs)==()
+        getMME(mme,df)
+    end
+    p = size(mme.mmeRhs,1)
+    return [getNames(mme) GaussSeidel(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,tol=0.000001,output=outFreq)]
+end
+
+function getSolGibbs(mme::MME, df::DataFrame;nIter=50000,outFreq=100)
+    if size(mme.mmeRhs)==()
+        getMME(mme,df)
+    end
+    p = size(mme.mmeRhs,1)
+    return [getNames(mme) Gibbs(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,mme.R,nIter,outFreq=outFreq)]
 end
