@@ -1,3 +1,5 @@
+using Distributions
+
 function mkDict(a)
     aUnique = unique(a)
     d = Dict()
@@ -40,7 +42,7 @@ function initMME(modelEquation::AbstractString,R::Float64) #Difference: made mod
     for (i,trm) = enumerate(modelTerms)
         dict[trm.trmStr] = modelTerms[i]
     end
-    return MME(modelEquation,modelTerms,dict,lhs,[],[],0,0,0,0,0,Array(Float64,1,1),R,0,1,0)
+    return MME(modelEquation,modelTerms,dict,lhs,R)
 end
 
 function getData(trm,df::DataFrame,mme::MME)
@@ -152,13 +154,22 @@ function getMME(mme::MME, df::DataFrame)
         mme.Ai = HAi'HAi
         addA(mme::MME)
     end
+    addLambdas(mme)
 end
 
 function setAsRandom(mme::MME,randomStr::AbstractString,ped::PedModule.Pedigree, G::Array{Float64,2})
     mme.pedTrmVec = split(randomStr," ",keep=false)
     mme.ped = ped
-    mme.Gi = inv(G)*mme.R
+    mme.GiOld = zeros(G)
+    mme.GiNew = inv(G)
     nothing
+end
+
+function setAsRandom(mme::MME,randomStr::AbstractString, vc::Float64, df::Float64)
+    trm  = mme.modelTermDict[randomStr]
+    scale = vc*(df-2)/df
+    randomEffect = RandomEffect(trm,0.0,vc,df,scale)
+    push!(mme.rndTrmVec,randomEffect)
 end
 
 function addA(mme::MME)
@@ -172,10 +183,22 @@ function addA(mme::MME)
             pedTrmj  = mme.modelTermDict[trmj]
             startPosj  = pedTrmj.startPos
             endPosj    = startPosj + pedTrmj.nLevels - 1
+            
             mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] =
-            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] + mme.Ai*mme.Gi[i,j]
+            mme.mmeLhs[startPosi:endPosi,startPosj:endPosj] + mme.Ai*(mme.GiNew[i,j]*mme.RNew - mme.GiOld[i,j]*mme.ROld)
         end
     end
+end
+
+function addLambdas(mme::MME)
+    for effect in  mme.rndTrmVec
+        trmi       = effect.term
+        startPosi  = trmi.startPos
+        endPosi    = startPosi + trmi.nLevels - 1
+        lambdaDiff = mme.RNew/effect.vcNew - mme.ROld/effect.vcOld
+        mme.mmeLhs[startPosi:endPosi,startPosi:endPosi] = 
+        mme.mmeLhs[startPosi:endPosi,startPosi:endPosi] + eye(trmi.nLevels)*lambdaDiff
+    end   
 end
 
 function getSolJ(mme::MME, df::DataFrame)
@@ -201,3 +224,113 @@ function getSolGibbs(mme::MME, df::DataFrame;nIter=50000,outFreq=100)
     p = size(mme.mmeRhs,1)
     return [getNames(mme) Gibbs(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,mme.R,nIter,outFreq=outFreq)]
 end
+
+
+function sampleMCMC(nIter,mme,df;outFreq=100)
+    if size(mme.mmeRhs)==() 
+        MMEModule.getMME(mme,df)
+    end
+    p = size(mme.mmeRhs,1)
+    sol = zeros(p)
+    solMean = zeros(p)
+    
+    vRes=mme.RNew
+    nuRes=4
+    scaleRes   = vRes*(nuRes-2)/nuRes 
+
+    if mme.M!=0
+        nObs,nLoci = size(mme.M.X)
+        α  = zeros(Float64,nLoci)
+        meanAlpha = zeros(Float64,nLoci)
+        mArray = mme.M.xArray
+        mpm = [dot(mme.M.X[:,i],mme.M.X[:,i]) for i=1:size(mme.M.X,2)]   
+        M = mme.M.X
+        dfEffectVar=4
+        vEff=mme.M.G/mme.M.mean2pq 
+        scaleVar   = vEff*(dfEffectVar-2)/dfEffectVar        # scale factor for locus effects
+    end
+    
+    ycorr = vec(full(mme.ySparse))
+    
+    ν = 10
+    if mme.ped != 0
+        pedTrmVec = mme.pedTrmVec
+        k = size(pedTrmVec,1)
+        νG0 = ν + k
+        G0 = inv(mme.GiNew)
+        P = G0*(νG0 - k - 1)
+        S = zeros(Float64,k,k)
+        G0Mean = zeros(Float64,k,k)
+    end
+
+    
+    for iter=1:nIter
+        #sample non-marker part
+        ycorr = ycorr + mme.X*sol
+        rhs = mme.X'ycorr #
+
+        MMEModule.Gibbs(mme.mmeLhs,sol,rhs,vRes)
+        ycorr = ycorr - mme.X*sol
+
+        solMean += (sol - solMean)/iter
+        
+        #sample marker
+        if mme.M!=0
+            MMEModule.sample_effects_ycorr!(M,mArray,mpm,ycorr,α,meanAlpha,vRes,vEff,iter)
+        end
+ 
+        for (i,trmi) = enumerate(pedTrmVec)    
+            pedTrmi  = mme.modelTermDict[trmi]
+            startPosi  = pedTrmi.startPos
+            endPosi    = startPosi + pedTrmi.nLevels - 1
+            for (j,trmj) = enumerate(pedTrmVec)
+                pedTrmj  = mme.modelTermDict[trmj]
+                startPosj  = pedTrmj.startPos
+                endPosj    = startPosj + pedTrmj.nLevels - 1
+                S[i,j] = (sol[startPosi:endPosi]'*mme.Ai*sol[startPosj:endPosj])[1,1]
+            end
+        end
+        
+        if mme.ped != 0
+            pedTrm1 = mme.modelTermDict[pedTrmVec[1]]
+            q = pedTrm1.nLevels
+            G0 = rand(InverseWishart(νG0 + q, P + S)) #ν+q?
+            mme.GiOld = copy(mme.GiNew)
+            mme.GiNew = inv(G0)
+            MMEModule.addA(mme)
+        end
+       
+        sampleVCs(mme)
+        
+        addLambdas(mme::MME)
+        
+        mme.ROld = mme.RNew
+        mme.RNew = sampleVariance(ycorr, length(ycorr), nuRes, scaleRes)
+        if mme.M!=0
+            vEff = sampleVariance(α, nLoci, dfEffectVar, scaleVar)
+        end
+
+        if iter%outFreq==0
+            println("at sample: ",iter)
+        end
+    end
+    output = Dict()
+    output["posteriorMeanLocationParms"] = [MMEModule.getNames(mme) solMean]
+    if mme.M!=0
+        output["posteriorMeanMarkerEffects"] = meanAlpha
+    end
+    return output
+end
+
+function sampleVCs(mme::MME)
+    for effect in  mme.rndTrmVec
+        trmi       = effect.term
+        startPosi  = trmi.startPos
+        endPosi    = startPosi + trmi.nLevels - 1
+        x          = sol[startPosi:endPosi]
+        effect.vcOld  = effect.vcNew
+        effect.vcNew  = sampleVariance(x,trmi.nLevels, effect.df, effect.scale)
+    end   
+end
+
+

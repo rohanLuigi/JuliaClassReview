@@ -61,47 +61,4 @@ function center!(X)
     return colMeans
 end
 
-function sampleMCMC(nIter,mme,df;outFreq=100)
-    if size(mme.mmeRhs)==()
-        MMEModule.getMME(mme,df)
-    end
-    p = size(mme.mmeRhs,1)
-    sol = zeros(p)
-    solMean = zeros(p)
-
-    vEff = mme.M.G/mme.M.mean2pq
-    vRes = mme.R
-
-
-    numMarker = size(mme.M.X,2)
-    α  = zeros(Float64,numMarker)
-    meanAlpha = zeros(Float64,numMarker)
-    mArray = mme.M.xArray
-    mpm = [dot(mme.M.X[:,i],mme.M.X[:,i]) for i=1:size(mme.M.X,2)]
-    ycorr = vec(full(mme.ySparse))
-    M = mme.M.X
-
-    for iter=1:nIter
-        #sample non-marker part
-        ycorr = ycorr + mme.X*sol
-        rhs = mme.X'ycorr #
-
-        MMEModule.Gibbs(mme.mmeLhs,sol,rhs,vRes)
-        ycorr = ycorr - mme.X*sol
-
-        solMean += (sol - solMean)/iter
-
-        #sample marker
-        MMEModule.sample_effects_ycorr!(M,mArray,mpm,ycorr,α,meanAlpha,vRes,vEff,iter)
-
-        if iter%outFreq==0
-            println("at sample: ",iter)
-        end
-    end
-    output = Dict()
-    output["posteriorMeanLocationParms"] = [MMEModule.getNames(mme) solMean]
-    output["posteriorMeanMarkerEffects"] = meanAlpha
-    return output
-end
-
 
