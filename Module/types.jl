@@ -18,6 +18,11 @@ type RandomEffect
     scale::Float64
 end
 
+type MCMCSamples
+    term::ModelTerm
+    sampleArray::Array{Float64,2}
+end
+
 type MME
     modelEquation::AbstractString
     modelTerms::Array{ModelTerm,1}
@@ -26,6 +31,7 @@ type MME
     covVec::Array{Symbol,1}
     pedTrmVec::Array{AbstractString,1}
     rndTrmVec::Array{RandomEffect,1}
+    outputSamplesVec::Array{MCMCSamples,1}
     X
     ySparse
     mmeLhs
@@ -39,6 +45,6 @@ type MME
     mmePos::Int64
     M #marker genotypes
     function MME(modelEquation,modelTerms,dict,lhs,R)
-        new(modelEquation,modelTerms,dict,lhs,[],[],[],0,0,0,0,0,Array(Float64,1,1),Array(Float64,1,1),0.0,R,0,1,0)
+        new(modelEquation,modelTerms,dict,lhs,[],[],[],[],0,0,0,0,0,Array(Float64,1,1),Array(Float64,1,1),0.0,R,0,1,0)
     end
 end

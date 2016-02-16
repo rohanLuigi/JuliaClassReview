@@ -234,6 +234,8 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
     sol = zeros(p)
     solMean = zeros(p)
     
+    initSampleArrays(mme,nIter)
+    
     vRes=mme.RNew
     nuRes=4
     scaleRes   = vRes*(nuRes-2)/nuRes 
@@ -306,6 +308,7 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
         
         mme.ROld = mme.RNew
         mme.RNew = sampleVariance(ycorr, length(ycorr), nuRes, scaleRes)
+        outputSamples(mme,sol,iter)
         if mme.M!=0
             vEff = sampleVariance(α, nLoci, dfEffectVar, scaleVar)
         end
@@ -318,6 +321,11 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
     output["posteriorMeanLocationParms"] = [MMEModule.getNames(mme) solMean]
     if mme.M!=0
         output["posteriorMeanMarkerEffects"] = meanAlpha
+    end
+    for i in  mme.outputSamplesVec
+        trmi   = i.term
+        trmStr = trmi.trmStr
+        output["MCMCSamples:"*trmStr] = i.sampleArray
     end
     return output
 end
@@ -333,4 +341,27 @@ function sampleVCs(mme::MME)
     end   
 end
 
+function outputSamplesFor(mme::MME,trmStr::AbstractString)
+    trm  = mme.modelTermDict[trmStr]
+    samples = MCMCSamples(trm,Array(Float64,1,1))
+    push!(mme.outputSamplesVec,samples)
+end
 
+function initSampleArrays(mme::MME,niter)
+    for i in  mme.outputSamplesVec
+        trmi = i.term
+        i.sampleArray = zeros(niter,trmi.nLevels)
+    end
+end
+
+function outputSamples(mme::MME,sol,iter::Int64)
+    for i in  mme.outputSamplesVec
+        trmi = i.term
+        startPosi  = trmi.startPos
+        endPosi    = startPosi + trmi.nLevels - 1
+        i.sampleArray[iter,:] = sol[startPosi:endPosi]
+    end
+end
+
+
+    
