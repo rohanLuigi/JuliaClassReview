@@ -168,7 +168,7 @@ end
 function setAsRandom(mme::MME,randomStr::AbstractString, vc::Float64, df::Float64)
     trm  = mme.modelTermDict[randomStr]
     scale = vc*(df-2)/df
-    randomEffect = RandomEffect(trm,0.0,vc,df,scale)
+    randomEffect = RandomEffect(trm,1.0,vc,df,scale,Array(Float64,1))#ROld/vcOld=0
     push!(mme.rndTrmVec,randomEffect)
 end
 
@@ -197,7 +197,7 @@ function addLambdas(mme::MME)
         endPosi    = startPosi + trmi.nLevels - 1
         lambdaDiff = mme.RNew/effect.vcNew - mme.ROld/effect.vcOld
         mme.mmeLhs[startPosi:endPosi,startPosi:endPosi] = 
-        mme.mmeLhs[startPosi:endPosi,startPosi:endPosi] + eye(trmi.nLevels)*lambdaDiff
+        mme.mmeLhs[startPosi:endPosi,startPosi:endPosi] + speye(trmi.nLevels)*lambdaDiff
     end   
 end
 
@@ -214,7 +214,7 @@ function getSolG(mme::MME, df::DataFrame;outFreq=10)
         getMME(mme,df)
     end
     p = size(mme.mmeRhs,1)
-    return [getNames(mme) GaussSeidel(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,tol=0.000001,output=outFreq)]
+    return [getNames(mme) GaussSeidel(mme.mmeLhs,fill(0.0,p),mme.mmeRhs,tol=0.001,output=outFreq)]
 end
 
 function getSolGibbs(mme::MME, df::DataFrame;nIter=50000,outFreq=100)
@@ -255,6 +255,7 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
     ycorr = vec(full(mme.ySparse))
     
     ν = 10
+    
     if mme.ped != 0
         pedTrmVec = mme.pedTrmVec
         k = size(pedTrmVec,1)
@@ -280,29 +281,28 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
         if mme.M!=0
             MMEModule.sample_effects_ycorr!(M,mArray,mpm,ycorr,α,meanAlpha,vRes,vEff,iter)
         end
- 
-        for (i,trmi) = enumerate(pedTrmVec)    
-            pedTrmi  = mme.modelTermDict[trmi]
-            startPosi  = pedTrmi.startPos
-            endPosi    = startPosi + pedTrmi.nLevels - 1
-            for (j,trmj) = enumerate(pedTrmVec)
-                pedTrmj  = mme.modelTermDict[trmj]
-                startPosj  = pedTrmj.startPos
-                endPosj    = startPosj + pedTrmj.nLevels - 1
-                S[i,j] = (sol[startPosi:endPosi]'*mme.Ai*sol[startPosj:endPosj])[1,1]
-            end
-        end
-        
         if mme.ped != 0
+            for (i,trmi) = enumerate(pedTrmVec)    
+                pedTrmi  = mme.modelTermDict[trmi]
+                startPosi  = pedTrmi.startPos
+                endPosi    = startPosi + pedTrmi.nLevels - 1
+                for (j,trmj) = enumerate(pedTrmVec)
+                    pedTrmj  = mme.modelTermDict[trmj]
+                    startPosj  = pedTrmj.startPos
+                    endPosj    = startPosj + pedTrmj.nLevels - 1
+                    S[i,j] = (sol[startPosi:endPosi]'*mme.Ai*sol[startPosj:endPosj])[1,1]
+                end
+            end
             pedTrm1 = mme.modelTermDict[pedTrmVec[1]]
             q = pedTrm1.nLevels
             G0 = rand(InverseWishart(νG0 + q, P + S)) #ν+q?
+            mme.genVarSampleArray[iter,:] = vec(G0)
             mme.GiOld = copy(mme.GiNew)
             mme.GiNew = inv(G0)
             MMEModule.addA(mme)
         end
        
-        sampleVCs(mme)
+        sampleVCs(mme,sol,iter)
         
         addLambdas(mme::MME)
         
@@ -318,6 +318,9 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
         end
     end
     output = Dict()
+    if mme.ped!=0
+        output["MCMCSamples for genetic var-cov parameters"] = mme.genVarSampleArray
+    end
     output["posteriorMeanLocationParms"] = [MMEModule.getNames(mme) solMean]
     if mme.M!=0
         output["posteriorMeanMarkerEffects"] = meanAlpha
@@ -325,12 +328,17 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
     for i in  mme.outputSamplesVec
         trmi   = i.term
         trmStr = trmi.trmStr
-        output["MCMCSamples:"*trmStr] = i.sampleArray
+        output["MCMCSamples: "*trmStr] = i.sampleArray
+    end
+    for i in  mme.rndTrmVec
+        trmi   = i.term
+        trmStr = trmi.trmStr
+        output["MCMCSamples for variance of :"*trmStr] = i.sampleArray
     end
     return output
 end
 
-function sampleVCs(mme::MME)
+function sampleVCs(mme::MME,sol::Array{Float64,1},iter::Int64)
     for effect in  mme.rndTrmVec
         trmi       = effect.term
         startPosi  = trmi.startPos
@@ -338,6 +346,7 @@ function sampleVCs(mme::MME)
         x          = sol[startPosi:endPosi]
         effect.vcOld  = effect.vcNew
         effect.vcNew  = sampleVariance(x,trmi.nLevels, effect.df, effect.scale)
+        effect.sampleArray[iter] = effect.vcNew
     end   
 end
 
@@ -348,10 +357,18 @@ function outputSamplesFor(mme::MME,trmStr::AbstractString)
 end
 
 function initSampleArrays(mme::MME,niter)
+    if mme.ped != 0
+        n = size(mme.GiNew,1)^2
+        mme.genVarSampleArray = zeros(niter,n)
+    end
     for i in  mme.outputSamplesVec
         trmi = i.term
         i.sampleArray = zeros(niter,trmi.nLevels)
     end
+    for i in  mme.rndTrmVec
+        trmi = i.term
+        i.sampleArray = zeros(niter)
+    end  
 end
 
 function outputSamples(mme::MME,sol,iter::Int64)

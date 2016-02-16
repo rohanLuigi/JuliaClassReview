@@ -23,18 +23,18 @@ end
 function GaussSeidel(A,x,b;tol=0.000001,output=10)
     n = size(x,1)
     for i=1:n
-        x[i] = ((b[i] - A[i,:]*x)/A[i,i])[1,1] + x[i]
+        x[i] = ((b[i] - A[:,i]'x)/A[i,i])[1,1] + x[i]
     end
     diff = sum((A*x-b).^2)
     iter = 0
     while ((diff/n > tol) & (iter<1000))
         iter += 1
         for i=1:n
-            x[i] = ((b[i] - A[i,:]*x)/A[i,i])[1,1] + x[i]
+            x[i] = ((b[i] - A[:,i]'x)/A[i,i])[1,1] + x[i]
         end
         diff = sum((A*x-b).^2)
         if iter%output == 0
-            println(iter," ",diff/n)
+            println("GaussSiedel: ",iter," ",diff/n)
         end
     end
     return x
