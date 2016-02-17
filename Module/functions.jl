@@ -308,6 +308,8 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
         
         mme.ROld = mme.RNew
         mme.RNew = sampleVariance(ycorr, length(ycorr), nuRes, scaleRes)
+        mme.resVarSampleArray[iter] = mme.RNew
+        
         outputSamples(mme,sol,iter)
         if mme.M!=0
             vEff = sampleVariance(α, nLoci, dfEffectVar, scaleVar)
@@ -318,6 +320,7 @@ function sampleMCMC(nIter,mme,df;outFreq=100)
         end
     end
     output = Dict()
+    output["MCMCSamples for residual variance"] = mme.resVarSampleArray
     if mme.ped!=0
         output["MCMCSamples for genetic var-cov parameters"] = mme.genVarSampleArray
     end
@@ -357,6 +360,7 @@ function outputSamplesFor(mme::MME,trmStr::AbstractString)
 end
 
 function initSampleArrays(mme::MME,niter)
+    mme.resVarSampleArray = zeros(niter)
     if mme.ped != 0
         n = size(mme.GiNew,1)^2
         mme.genVarSampleArray = zeros(niter,n)

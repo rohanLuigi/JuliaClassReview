@@ -34,7 +34,7 @@ function GaussSeidel(A,x,b;tol=0.000001,output=10)
         end
         diff = sum((A*x-b).^2)
         if iter%output == 0
-            println("GaussSiedel: ",iter," ",diff/n)
+            println("GaussSeidel: ",iter," ",diff/n)
         end
     end
     return x
