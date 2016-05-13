@@ -226,12 +226,11 @@ function getSolGibbs(mme::MME, df::DataFrame;nIter=50000,outFreq=100)
 end
 
 
-function sampleMCMC(nIter,mme,df;outFreq=100)
+function sampleMCMC(nIter,mme,df;sol=zeros(size(mme.mmeRhs,1)),outFreq=100)
     if size(mme.mmeRhs)==() 
         MMEModule.getMME(mme,df)
     end
     p = size(mme.mmeRhs,1)
-    sol = zeros(p)
     solMean = zeros(p)
     
     initSampleArrays(mme,nIter)
